@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.LCDR" parent="android:Theme.Material.NoTitleBar">
+        <item name="android:windowBackground">@android:color/black</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+    </style>
+
+    <style name="Theme.LCDR.SplashScreen" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">#0A0D14</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_lcdr_tile</item>
+        <item name="postSplashScreenTheme">@style/Theme.LCDR</item>
+    </style>
+</resources>
