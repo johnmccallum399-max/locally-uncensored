@@ -1,18 +1,25 @@
 package com.lcdr.assistant.tools.impl
 
+import android.annotation.SuppressLint
 import android.app.AlarmManager
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.usage.UsageStatsManager
 import android.content.ClipboardManager
+import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.location.Geocoder
 import android.location.Location
+import android.location.LocationListener
+import android.location.LocationManager
 import android.os.BatteryManager
+import android.os.Build
+import android.os.Bundle
 import android.provider.AlarmClock
+import android.provider.MediaStore
 import androidx.core.app.NotificationCompat
 import com.lcdr.assistant.tools.ToolCallSpec
 import com.lcdr.assistant.tools.ToolResult
@@ -20,6 +27,7 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import java.util.*
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -126,5 +134,82 @@ class SystemTools @Inject constructor(@ApplicationContext private val context: C
         } catch (e: Exception) {
             ToolResult.Failure("Usage stats failed: ${e.message}")
         }
+    }
+
+    @SuppressLint("MissingPermission")
+    suspend fun getLocation(spec: ToolCallSpec): ToolResult = withContext(Dispatchers.IO) {
+        val lm = context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
+
+        // Try last-known first (fast path)
+        val lastKnown = sequenceOf(LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER)
+            .mapNotNull { runCatching { lm.getLastKnownLocation(it) }.getOrNull() }
+            .firstOrNull()
+
+        val location: Location? = lastKnown ?: withTimeoutOrNull(8_000) {
+            suspendCancellableCoroutine { cont ->
+                val listener = object : LocationListener {
+                    override fun onLocationChanged(loc: Location) {
+                        lm.removeUpdates(this)
+                        cont.resume(loc)
+                    }
+                    @Deprecated("Required for API < 30")
+                    override fun onStatusChanged(p: String?, s: Int, e: Bundle?) = Unit
+                }
+                val provider = when {
+                    lm.isProviderEnabled(LocationManager.GPS_PROVIDER) -> LocationManager.GPS_PROVIDER
+                    lm.isProviderEnabled(LocationManager.NETWORK_PROVIDER) -> LocationManager.NETWORK_PROVIDER
+                    else -> null
+                }
+                if (provider == null) {
+                    cont.resume(null)
+                    return@suspendCancellableCoroutine
+                }
+                lm.requestSingleUpdate(provider, listener, null)
+                cont.invokeOnCancellation { lm.removeUpdates(listener) }
+            }
+        }
+
+        if (location == null) return@withContext ToolResult.Failure("Location unavailable — ensure GPS or Network location is enabled and permission granted.")
+
+        val lat = location.latitude
+        val lon = location.longitude
+        val accuracy = location.accuracy
+
+        val address = try {
+            @Suppress("DEPRECATION")
+            val geocoder = Geocoder(context, Locale.getDefault())
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                var result: String? = null
+                geocoder.getFromLocation(lat, lon, 1) { result = it.firstOrNull()?.getAddressLine(0) }
+                result
+            } else {
+                @Suppress("DEPRECATION")
+                geocoder.getFromLocation(lat, lon, 1)?.firstOrNull()?.getAddressLine(0)
+            }
+        } catch (_: Exception) { null }
+
+        val summary = buildString {
+            append("Lat: $lat, Lon: $lon (accuracy ±${accuracy.toInt()}m)")
+            if (address != null) append("\nAddress: $address")
+        }
+        ToolResult.Success(summary)
+    }
+
+    suspend fun takePhoto(spec: ToolCallSpec): ToolResult = withContext(Dispatchers.IO) {
+        val displayName = "LCDR_${System.currentTimeMillis()}.jpg"
+        val values = ContentValues().apply {
+            put(MediaStore.Images.Media.DISPLAY_NAME, displayName)
+            put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
+            put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/LCDR")
+        }
+        val uri = context.contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
+            ?: return@withContext ToolResult.Failure("Could not create MediaStore entry for photo.")
+
+        val intent = Intent(MediaStore.ACTION_IMAGE_CAPTURE).apply {
+            putExtra(MediaStore.EXTRA_OUTPUT, uri)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+        }
+        context.startActivity(intent)
+        ToolResult.Success("Camera launched. Photo will be saved to: $uri\n(Share the URI or say 'use the photo' after capturing.)")
     }
 }

@@ -43,6 +43,8 @@ class ToolDispatcher @Inject constructor(
             "write_file" -> fileTools.writeFile(spec)
             "open_file" -> fileTools.openFile(spec)
             "get_battery" -> systemTools.getBattery(spec)
+            "get_location" -> systemTools.getLocation(spec)
+            "take_photo" -> systemTools.takePhoto(spec)
             "get_clipboard" -> systemTools.getClipboard(spec)
             "set_clipboard" -> systemTools.setClipboard(spec)
             "set_alarm" -> systemTools.setAlarm(spec)

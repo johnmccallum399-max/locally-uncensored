@@ -148,6 +148,11 @@ val ALL_TOOL_DEFINITIONS: List<ToolDefinition> = listOf(
         parameters = mapOf("type" to "object", "properties" to emptyMap<String, Any>())
     ),
     ToolDefinition(
+        name = "take_photo",
+        description = "Launch the camera app and capture a photo; returns the saved URI",
+        parameters = mapOf("type" to "object", "properties" to emptyMap<String, Any>())
+    ),
+    ToolDefinition(
         name = "set_alarm",
         description = "Create a system alarm",
         parameters = mapOf(
