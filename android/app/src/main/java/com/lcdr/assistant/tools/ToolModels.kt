@@ -138,6 +138,17 @@ val ALL_TOOL_DEFINITIONS: List<ToolDefinition> = listOf(
         )
     ),
     ToolDefinition(
+        name = "open_file",
+        description = "Open a file with the system's default app (viewer, browser, etc.)",
+        parameters = mapOf(
+            "type" to "object",
+            "required" to listOf("path"),
+            "properties" to mapOf(
+                "path" to mapOf("type" to "string", "description" to "Absolute or relative path to the file")
+            )
+        )
+    ),
+    ToolDefinition(
         name = "get_battery",
         description = "Get battery level and charging state",
         parameters = mapOf("type" to "object", "properties" to emptyMap<String, Any>())

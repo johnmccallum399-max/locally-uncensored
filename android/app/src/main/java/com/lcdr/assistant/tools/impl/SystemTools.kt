@@ -71,6 +71,8 @@ class SystemTools @Inject constructor(@ApplicationContext private val context: C
         if (parts.size != 2) return@withContext ToolResult.Failure("Invalid time format, use HH:mm")
         val hour = parts[0].toIntOrNull() ?: return@withContext ToolResult.Failure("Invalid hour")
         val minute = parts[1].toIntOrNull() ?: return@withContext ToolResult.Failure("Invalid minute")
+        if (hour !in 0..23) return@withContext ToolResult.Failure("Hour must be 0–23")
+        if (minute !in 0..59) return@withContext ToolResult.Failure("Minute must be 0–59")
 
         val intent = Intent(AlarmClock.ACTION_SET_ALARM).apply {
             putExtra(AlarmClock.EXTRA_HOUR, hour)
@@ -84,8 +86,10 @@ class SystemTools @Inject constructor(@ApplicationContext private val context: C
     }
 
     suspend fun setTimer(spec: ToolCallSpec): ToolResult = withContext(Dispatchers.Main) {
-        val seconds = (spec.arguments["seconds"] as? Double)?.toInt()
-            ?: return@withContext ToolResult.Failure("'seconds' required")
+        val seconds = when (val v = spec.arguments["seconds"]) {
+            is Number -> v.toInt()
+            else -> return@withContext ToolResult.Failure("'seconds' required")
+        }
         val label = spec.arguments["label"] as? String ?: "LCDR timer"
 
         val intent = Intent(AlarmClock.ACTION_SET_TIMER).apply {
