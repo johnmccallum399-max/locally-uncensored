@@ -3,6 +3,7 @@ package com.lcdr.assistant.data.repository
 import com.lcdr.assistant.data.prefs.SecurePrefs
 import com.lcdr.assistant.data.remote.ApiService
 import com.lcdr.assistant.data.remote.dto.LoginRequest
+import com.lcdr.assistant.data.remote.dto.RegisterRequest
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
@@ -29,6 +30,23 @@ class AuthRepository @Inject constructor(
                 AuthResult.Success
             } else {
                 AuthResult.Error("Login failed: ${response.code()} ${response.message()}")
+            }
+        } catch (e: Exception) {
+            AuthResult.Error(e.message ?: "Network error")
+        }
+    }
+
+    suspend fun register(email: String, password: String, name: String): AuthResult = withContext(Dispatchers.IO) {
+        try {
+            val response = apiService.register(RegisterRequest(email, password, name))
+            if (response.isSuccessful) {
+                val body = response.body() ?: return@withContext AuthResult.Error("Empty response")
+                securePrefs.saveToken(body.token)
+                securePrefs.saveUserId(body.user.id)
+                securePrefs.saveUserName(body.user.name)
+                AuthResult.Success
+            } else {
+                AuthResult.Error("Registration failed: ${response.code()} ${response.message()}")
             }
         } catch (e: Exception) {
             AuthResult.Error(e.message ?: "Network error")

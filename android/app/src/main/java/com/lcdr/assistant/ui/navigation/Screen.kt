@@ -2,6 +2,7 @@ package com.lcdr.assistant.ui.navigation
 
 sealed class Screen(val route: String) {
     object Login : Screen("login")
+    object Register : Screen("register")
     object Chat : Screen("chat")
     object Voice : Screen("voice")
     object Hub : Screen("hub")

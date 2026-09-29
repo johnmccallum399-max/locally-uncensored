@@ -1,6 +1,7 @@
 package com.lcdr.assistant.ui.login
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -28,6 +29,7 @@ import com.lcdr.assistant.ui.theme.TextSecondary
 @Composable
 fun LoginScreen(
     onLoginSuccess: () -> Unit,
+    onNavigateToRegister: () -> Unit = {},
     viewModel: LoginViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -145,6 +147,13 @@ fun LoginScreen(
                     Text("AUTHENTICATE", fontWeight = FontWeight.Bold, letterSpacing = 2.sp)
                 }
             }
+
+            Text(
+                text = "Don't have an account? Register",
+                style = MaterialTheme.typography.bodySmall,
+                color = TacticalBlue,
+                modifier = Modifier.clickable(onClick = onNavigateToRegister)
+            )
         }
     }
 }

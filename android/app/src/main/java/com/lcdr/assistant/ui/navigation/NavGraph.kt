@@ -12,6 +12,7 @@ import com.lcdr.assistant.ui.chat.ChatScreen
 import com.lcdr.assistant.ui.device.DeviceScreen
 import com.lcdr.assistant.ui.hub.HubScreen
 import com.lcdr.assistant.ui.login.LoginScreen
+import com.lcdr.assistant.ui.login.RegisterScreen
 import com.lcdr.assistant.ui.memory.MemoryScreen
 import com.lcdr.assistant.ui.settings.SettingsScreen
 import com.lcdr.assistant.ui.voice.VoiceScreen
@@ -85,7 +86,18 @@ fun NavGraph(startedWithToken: Boolean) {
                         navController.navigate(Screen.Chat.route) {
                             popUpTo(Screen.Login.route) { inclusive = true }
                         }
-                    }
+                    },
+                    onNavigateToRegister = { navController.navigate(Screen.Register.route) }
+                )
+            }
+            composable(Screen.Register.route) {
+                RegisterScreen(
+                    onRegisterSuccess = {
+                        navController.navigate(Screen.Chat.route) {
+                            popUpTo(Screen.Login.route) { inclusive = true }
+                        }
+                    },
+                    onNavigateBack = { navController.popBackStack() }
                 )
             }
             composable(Screen.Chat.route) {
