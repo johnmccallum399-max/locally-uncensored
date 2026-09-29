@@ -1,0 +1,4 @@
+-keep class com.lcdr.assistant.data.remote.dto.** { *; }
+-keep class com.lcdr.assistant.tools.ToolModels** { *; }
+-keepattributes *Annotation*
+-keepattributes Signature
