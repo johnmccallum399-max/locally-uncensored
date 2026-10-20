@@ -7,6 +7,7 @@ import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 import android.speech.tts.TextToSpeech
+import android.speech.tts.UtteranceProgressListener
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.lcdr.assistant.data.repository.ChatEvent
@@ -47,10 +48,54 @@ class VoiceViewModel @Inject constructor(
     private fun initTts() {
         tts = TextToSpeech(context) { status ->
             ttsReady = status == TextToSpeech.SUCCESS
-            tts?.language = Locale.getDefault()
-            tts?.setSpeechRate(1.05f)
+            if (ttsReady) {
+                tts?.language = Locale.getDefault()
+                tts?.setSpeechRate(0.97f)
+                tts?.setPitch(1.0f)
+                pickNaturalVoice()
+                tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+                    override fun onStart(utteranceId: String?) {}
+                    override fun onDone(utteranceId: String?) {
+                        if (utteranceId == LAST_UTTERANCE) {
+                            _uiState.update { it.copy(state = VoiceState.IDLE) }
+                        }
+                    }
+                    @Deprecated("Deprecated in Java")
+                    override fun onError(utteranceId: String?) {
+                        _uiState.update { it.copy(state = VoiceState.IDLE) }
+                    }
+                })
+            }
         }
     }
+
+    /** Prefer the highest-quality installed voice for the current language (neural/network voices over legacy ones). */
+    private fun pickNaturalVoice() {
+        val engine = tts ?: return
+        val lang = Locale.getDefault().language
+        val best = engine.voices
+            ?.filter { it.locale.language == lang && !it.features.contains("notInstalled") }
+            ?.maxByOrNull { it.quality * 2 + if (it.isNetworkConnectionRequired) 1 else 0 }
+        if (best != null) engine.voice = best
+    }
+
+    /** Strip markdown/code/URLs so the engine doesn't read symbols aloud. */
+    private fun cleanForSpeech(text: String): String =
+        text
+            .replace(Regex("```[\\s\\S]*?```"), " code omitted. ")
+            .replace(Regex("`([^`]*)`"), "$1")
+            .replace(Regex("!?\\[([^]]*)]\\([^)]*\\)"), "$1")
+            .replace(Regex("https?://\\S+"), "link")
+            .replace(Regex("(?m)^\\s{0,3}#{1,6}\\s*"), "")
+            .replace(Regex("(?m)^\\s*[-*+]\\s+"), "")
+            .replace(Regex("[*_~>|]+"), "")
+            .replace(Regex("(?<![.!?:])\\s*\\n+\\s*"), ". ").replace(Regex("\\s*\\n+\\s*"), " ")
+            .replace(Regex("\\s{2,}"), " ")
+            .trim()
+
+    /** Split into sentences so the engine uses natural phrasing and starts speaking sooner. */
+    private fun splitSentences(text: String): List<String> =
+        text.split(Regex("(?<=[.!?])\\s+")).map { it.trim() }.filter { it.isNotEmpty() }
 
     fun startListening() {
         if (!SpeechRecognizer.isRecognitionAvailable(context)) {
@@ -117,21 +162,21 @@ class VoiceViewModel @Inject constructor(
     }
 
     private fun speak(text: String) {
-        if (!ttsReady) {
+        val sentences = splitSentences(cleanForSpeech(text))
+        if (!ttsReady || sentences.isEmpty()) {
             _uiState.update { it.copy(state = VoiceState.IDLE) }
             return
         }
-        tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "lcdr_response")
-        tts?.setOnUtteranceProgressListener(object : android.speech.tts.UtteranceProgressListener() {
-            override fun onStart(utteranceId: String?) {}
-            override fun onDone(utteranceId: String?) {
-                _uiState.update { it.copy(state = VoiceState.IDLE) }
-            }
-            @Deprecated("Deprecated in Java")
-            override fun onError(utteranceId: String?) {
-                _uiState.update { it.copy(state = VoiceState.IDLE) }
-            }
-        })
+        sentences.forEachIndexed { i, sentence ->
+            val last = i == sentences.lastIndex
+            tts?.speak(
+                sentence,
+                if (i == 0) TextToSpeech.QUEUE_FLUSH else TextToSpeech.QUEUE_ADD,
+                null,
+                if (last) LAST_UTTERANCE else "lcdr_$i"
+            )
+            if (!last) tts?.playSilentUtterance(120, TextToSpeech.QUEUE_ADD, "pause_$i")
+        }
     }
 
     fun stopListening() {
@@ -144,5 +189,9 @@ class VoiceViewModel @Inject constructor(
         speechRecognizer?.destroy()
         tts?.shutdown()
         super.onCleared()
+    }
+
+    private companion object {
+        const val LAST_UTTERANCE = "lcdr_last"
     }
 }
