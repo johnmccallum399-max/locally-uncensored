@@ -3,6 +3,8 @@ package com.lcdr.assistant.ui.voice
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
@@ -14,6 +16,8 @@ import com.lcdr.assistant.data.repository.ChatEvent
 import com.lcdr.assistant.data.repository.ChatRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import java.util.*
@@ -40,69 +44,78 @@ class VoiceViewModel @Inject constructor(
     private var speechRecognizer: SpeechRecognizer? = null
     private var tts: TextToSpeech? = null
     private var ttsReady = false
-
-    init {
-        initTts()
+    private var ttsError = "Speech engine is starting; try again shortly"
+    private var responseJob: Job? = null
+    private var cleared = false
+    private val turn = VoiceTurn()
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private val playback = SpeechPlayback(object : SpeechOutput {
+        override fun stop() { tts?.stop() }
+        override fun speak(text: String, id: String, flush: Boolean): Boolean =
+            tts?.speak(text, if (flush) TextToSpeech.QUEUE_FLUSH else TextToSpeech.QUEUE_ADD,
+                null, id) == TextToSpeech.SUCCESS
+        override fun pause(millis: Long, id: String): Boolean =
+            tts?.playSilentUtterance(millis, TextToSpeech.QUEUE_ADD, id) == TextToSpeech.SUCCESS
+    }) { error ->
+        _uiState.update { it.copy(state = VoiceState.IDLE, error = error) }
     }
+
+    init { initTts() }
 
     private fun initTts() {
         tts = TextToSpeech(context) { status ->
-            ttsReady = status == TextToSpeech.SUCCESS
-            if (ttsReady) {
-                tts?.language = Locale.getDefault()
-                tts?.setSpeechRate(0.97f)
-                tts?.setPitch(1.0f)
-                pickNaturalVoice()
-                tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
-                    override fun onStart(utteranceId: String?) {}
-                    override fun onDone(utteranceId: String?) {
-                        if (utteranceId == LAST_UTTERANCE) {
-                            _uiState.update { it.copy(state = VoiceState.IDLE) }
-                        }
-                    }
-                    @Deprecated("Deprecated in Java")
-                    override fun onError(utteranceId: String?) {
-                        _uiState.update { it.copy(state = VoiceState.IDLE) }
-                    }
-                })
+            // Also handles an engine invoking onInit before the constructor assignment completes.
+            mainHandler.post {
+                if (!cleared) configureTts(status)
             }
         }
     }
 
-    /** Prefer the highest-quality installed voice for the current language (neural/network voices over legacy ones). */
-    private fun pickNaturalVoice() {
+    private fun configureTts(status: Int) {
         val engine = tts ?: return
-        val lang = Locale.getDefault().language
-        val best = engine.voices
-            ?.filter { it.locale.language == lang && !it.features.contains("notInstalled") }
-            ?.maxByOrNull { it.quality * 2 + if (it.isNetworkConnectionRequired) 1 else 0 }
-        if (best != null) engine.voice = best
+        ttsReady = false
+        ttsError = "Speech engine unavailable"
+        if (status != TextToSpeech.SUCCESS) return
+        val voices = engine.voices.orEmpty()
+        val selected = selectSpeechVoice(voices.map {
+            SpeechVoice(it.name, it.locale, it.quality, it.isNetworkConnectionRequired,
+                !it.features.orEmpty().contains(TextToSpeech.Engine.KEY_FEATURE_NOT_INSTALLED))
+        }, Locale.getDefault())
+        if (selected == null) {
+            ttsError = "Install an offline text-to-speech voice for your device language, then reopen voice mode"
+            return
+        }
+        val voice = voices.first { it.name == selected.name }
+        if (engine.setVoice(voice) != TextToSpeech.SUCCESS ||
+            engine.setSpeechRate(0.97f) != TextToSpeech.SUCCESS ||
+            engine.setPitch(1.0f) != TextToSpeech.SUCCESS) return
+        val listener = object : UtteranceProgressListener() {
+            override fun onStart(utteranceId: String?) {}
+            override fun onDone(utteranceId: String?) {
+                viewModelScope.launch { playback.done(utteranceId) }
+            }
+            @Deprecated("Deprecated in Java")
+            override fun onError(utteranceId: String?) {
+                viewModelScope.launch { playback.error(utteranceId) }
+            }
+            override fun onError(utteranceId: String?, errorCode: Int) {
+                viewModelScope.launch { playback.error(utteranceId) }
+            }
+            override fun onStop(utteranceId: String?, interrupted: Boolean) {
+                viewModelScope.launch { playback.stopped(utteranceId) }
+            }
+        }
+        ttsReady = engine.setOnUtteranceProgressListener(listener) == TextToSpeech.SUCCESS
     }
 
-    /** Strip markdown/code/URLs so the engine doesn't read symbols aloud. */
-    private fun cleanForSpeech(text: String): String =
-        text
-            .replace(Regex("```[\\s\\S]*?```"), " code omitted. ")
-            .replace(Regex("`([^`]*)`"), "$1")
-            .replace(Regex("!?\\[([^]]*)]\\([^)]*\\)"), "$1")
-            .replace(Regex("https?://\\S+"), "link")
-            .replace(Regex("(?m)^\\s{0,3}#{1,6}\\s*"), "")
-            .replace(Regex("(?m)^\\s*[-*+]\\s+"), "")
-            .replace(Regex("[*_~>|]+"), "")
-            .replace(Regex("(?<![.!?:])\\s*\\n+\\s*"), ". ").replace(Regex("\\s*\\n+\\s*"), " ")
-            .replace(Regex("\\s{2,}"), " ")
-            .trim()
-
-    /** Split into sentences so the engine uses natural phrasing and starts speaking sooner. */
-    private fun splitSentences(text: String): List<String> =
-        text.split(Regex("(?<=[.!?])\\s+")).map { it.trim() }.filter { it.isNotEmpty() }
-
     fun startListening() {
+        stopListening()
         if (!SpeechRecognizer.isRecognitionAvailable(context)) {
             _uiState.update { it.copy(error = "Speech recognition not available") }
             return
         }
 
+        val token = turn.begin()
         _uiState.update { it.copy(state = VoiceState.LISTENING, transcript = "", error = null) }
 
         speechRecognizer = SpeechRecognizer.createSpeechRecognizer(context).apply {
@@ -114,18 +127,20 @@ class VoiceViewModel @Inject constructor(
                 override fun onEndOfSpeech() {}
                 override fun onPartialResults(partialResults: Bundle?) {
                     val text = partialResults?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull()
-                    if (text != null) _uiState.update { it.copy(transcript = text) }
+                    if (text != null && turn.isListening(token)) _uiState.update { it.copy(transcript = text) }
                 }
                 override fun onResults(results: Bundle?) {
+                    if (!turn.acceptRecognition(token)) return
                     val text = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull()
                     if (!text.isNullOrBlank()) {
                         _uiState.update { it.copy(state = VoiceState.PROCESSING, transcript = text) }
-                        sendToLcdr(text)
+                        sendToLcdr(text, token)
                     } else {
                         _uiState.update { it.copy(state = VoiceState.IDLE) }
                     }
                 }
                 override fun onError(error: Int) {
+                    if (!turn.acceptRecognition(token)) return
                     _uiState.update { it.copy(state = VoiceState.IDLE, error = "STT error $error") }
                 }
                 override fun onEvent(eventType: Int, params: Bundle?) {}
@@ -140,58 +155,65 @@ class VoiceViewModel @Inject constructor(
         }
     }
 
-    private fun sendToLcdr(text: String) {
-        viewModelScope.launch {
+    private fun sendToLcdr(text: String, token: Long) {
+        responseJob = viewModelScope.launch {
             val response = StringBuilder()
-            chatRepository.sendMessage(text)
-                .collect { event ->
-                    when (event) {
-                        is ChatEvent.TextDelta -> response.append(event.text)
-                        is ChatEvent.Done -> {
-                            val fullResponse = response.toString()
-                            _uiState.update { it.copy(state = VoiceState.SPEAKING, response = fullResponse) }
-                            speak(fullResponse)
-                        }
-                        is ChatEvent.Error -> _uiState.update {
-                            it.copy(state = VoiceState.IDLE, error = event.message)
-                        }
-                        else -> {}
+            try {
+                // Consume a single terminal event; duplicate Done events must not replay the reply.
+                val terminal = chatRepository.sendMessage(text).onEach { event ->
+                    if (turn.isCurrent(token) && event is ChatEvent.TextDelta) response.append(event.text)
+                }.first { it is ChatEvent.Done || it is ChatEvent.Error }
+                if (!turn.isCurrent(token)) return@launch
+                when (terminal) {
+                    is ChatEvent.Done -> {
+                        val fullResponse = response.toString()
+                        _uiState.update { it.copy(state = VoiceState.SPEAKING, response = fullResponse) }
+                        speak(fullResponse)
                     }
+                    is ChatEvent.Error -> _uiState.update {
+                        it.copy(state = VoiceState.IDLE, error = terminal.message)
+                    }
+                    else -> {}
                 }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                if (turn.isCurrent(token)) _uiState.update {
+                    it.copy(state = VoiceState.IDLE,
+                        error = error.message ?: "Voice response failed")
+                }
+            }
         }
     }
 
     private fun speak(text: String) {
-        val sentences = splitSentences(cleanForSpeech(text))
-        if (!ttsReady || sentences.isEmpty()) {
-            _uiState.update { it.copy(state = VoiceState.IDLE) }
+        if (!ttsReady) {
+            playback.cancel()
+            _uiState.update { it.copy(state = VoiceState.IDLE, error = ttsError) }
             return
         }
-        sentences.forEachIndexed { i, sentence ->
-            val last = i == sentences.lastIndex
-            tts?.speak(
-                sentence,
-                if (i == 0) TextToSpeech.QUEUE_FLUSH else TextToSpeech.QUEUE_ADD,
-                null,
-                if (last) LAST_UTTERANCE else "lcdr_$i"
-            )
-            if (!last) tts?.playSilentUtterance(120, TextToSpeech.QUEUE_ADD, "pause_$i")
-        }
+        playback.speak(SpeechText.chunks(text, Locale.getDefault(), TextToSpeech.getMaxSpeechInputLength()))
     }
 
     fun stopListening() {
-        speechRecognizer?.stopListening()
-        tts?.stop()
+        turn.cancel()
+        responseJob?.cancel()
+        responseJob = null
+        playback.cancel()
+        // stopListening may still deliver a final recognition result; cancel and invalidate instead.
+        speechRecognizer?.cancel()
+        speechRecognizer?.destroy()
+        speechRecognizer = null
         _uiState.update { it.copy(state = VoiceState.IDLE) }
     }
 
     override fun onCleared() {
-        speechRecognizer?.destroy()
+        cleared = true
+        stopListening()
+        mainHandler.removeCallbacksAndMessages(null)
+        ttsReady = false
         tts?.shutdown()
+        tts = null
         super.onCleared()
-    }
-
-    private companion object {
-        const val LAST_UTTERANCE = "lcdr_last"
     }
 }
