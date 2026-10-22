@@ -35,7 +35,9 @@ The backend chat remains network-dependent. The Android recognizer remains the e
 - Full build/test attempt: `gradle -p android :app:testDebugUnitTest :app:assembleDebug` failed with `gradle: command not found`. The checkout has wrapper properties/JAR upstream but no `gradlew` launcher. There is no configured Android SDK/device here. No APK was built or installed. No app-wide suite or instrumented test result is claimed.
 - A separate source reviewer found no critical/important issue in the corrections and identified the nested-fence gap; its regression test now passes.
 
-On an Android build host, run from `android/` after generating the wrapper as described in its README:
+The build follow-up commits the wrapper launchers and adds Android CI. The results above remain the historical T8V2 source-level validation. Follow [README.md](README.md#repeatable-verification) for prerequisites and the current repeatable procedure; see [BUILD_VERIFICATION.md](BUILD_VERIFICATION.md) for the subsequent real-build results.
+
+On an Android build host, run from `android/` using the committed wrapper:
 
 ```sh
 ./gradlew :app:testDebugUnitTest :app:assembleDebug
@@ -60,4 +62,4 @@ Record phone/Android version, TTS engine/version, device locale, selected voice 
 | Navigation/lifecycle | Close or use system Back during recognition, processing and speech; reopen. No speech resumes from the discarded turn and no old recognizer remains. Also check rotation, background/foreground and screen lock; no new background-audio policy was introduced. |
 | Cleanup | Read headings, bullets, tables, inline code, ordinary/parenthesized links, and open/closed backtick/tilde code fences including quote/list containers. Labels remain intelligible and code/URL bodies are omitted. Review unfamiliar Markdown constructs manually. |
 
-Remaining release gate: full Android build, ViewModel/lifecycle integration tests and the device checks above. The correction is a reviewable draft, not a hardware-certified release.
+Build follow-up: full debug APK compilation, actual Gradle tests and lint results are now recorded in [BUILD_VERIFICATION.md](BUILD_VERIFICATION.md). ViewModel/lifecycle integration and the device checks above remain merge gates. Keep the correction in draft until their evidence is recorded.
