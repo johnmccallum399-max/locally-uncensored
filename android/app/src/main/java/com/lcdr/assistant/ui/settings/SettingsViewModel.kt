@@ -1,6 +1,7 @@
 package com.lcdr.assistant.ui.settings
 
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
 import com.lcdr.assistant.data.local.dao.ActionLogDao
 import com.lcdr.assistant.data.local.entity.ActionLogEntity
 import com.lcdr.assistant.data.prefs.SecurePrefs

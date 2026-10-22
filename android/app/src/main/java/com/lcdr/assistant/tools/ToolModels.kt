@@ -9,11 +9,11 @@ data class ToolCallSpec(
 )
 
 sealed class ToolResult {
-    data class Success(val content: String) : ToolResult()
+    data class Success(override val content: String) : ToolResult()
     data class Failure(val error: String) : ToolResult()
 
     val isError get() = this is Failure
-    val content get() = when (this) {
+    open val content: String get() = when (this) {
         is Success -> content
         is Failure -> error
     }

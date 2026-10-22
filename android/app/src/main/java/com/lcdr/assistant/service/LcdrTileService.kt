@@ -1,5 +1,6 @@
 package com.lcdr.assistant.service
 
+import android.annotation.SuppressLint
 import android.app.PendingIntent
 import android.content.Intent
 import android.os.Build
@@ -18,6 +19,8 @@ class LcdrTileService : TileService() {
         }
     }
 
+    // The Intent overload is required below API 34; the newer path is guarded below.
+    @SuppressLint("StartActivityAndCollapseDeprecated")
     override fun onClick() {
         super.onClick()
         val intent = Intent(this, MainActivity::class.java).apply {
