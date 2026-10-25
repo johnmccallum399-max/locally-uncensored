@@ -27,14 +27,41 @@ jobs:
         run: npm run lint
 
       - name: Type check
-        run: npx tsc --noEmit
+        if: ${{ !cancelled() }}
+        run: npx tsc -b --pretty false
+
+  # Build independently of lint debt; quality checks still fail visibly.
+  frontend-build:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'npm'
+
+      - name: Install npm dependencies
+        run: npm ci
 
       - name: Build frontend
         run: npm run build
 
+      - name: Save frontend for Rust checks
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-frontend-${{ github.sha }}
+          path: dist/
+          if-no-files-found: error
+          retention-days: 1
+
   cargo-check:
+    needs: frontend-build
     runs-on: ${{ matrix.platform }}
     strategy:
+      fail-fast: false
       matrix:
         platform: [ubuntu-22.04, windows-latest]
 
@@ -69,6 +96,14 @@ jobs:
             file \
             libssl-dev
 
+      # Direct cargo check does not execute Tauri CLI's beforeBuildCommand.
+      # Both frontendDist and bundle.resources refer to this real Vite output.
+      - name: Restore frontend
+        uses: actions/download-artifact@v4
+        with:
+          name: desktop-frontend-${{ github.sha }}
+          path: dist
+
       - name: Cargo check
         working-directory: src-tauri
-        run: cargo check
+        run: cargo check --locked
