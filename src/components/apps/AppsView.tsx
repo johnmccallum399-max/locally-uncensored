@@ -2,8 +2,8 @@ import { useMemo, useState } from 'react'
 import { ArrowLeft, Loader2, Plus, RotateCw, Square, Trash2, TriangleAlert, ExternalLink } from 'lucide-react'
 import { useGenerativeAppStore, type GenerativeApp } from '../../stores/generativeAppStore'
 import { useModelStore } from '../../stores/modelStore'
-import { appIcon, buildAppDocument } from '../../lib/generative-app'
-import { openExternal } from '../../api/backend'
+import { appIcon, buildAppBrowserDocument } from '../../lib/generative-app'
+import { openGeneratedAppDocument } from '../../lib/generative-app-browser'
 
 const EXAMPLES = ['Calculator', 'Pomodoro timer', 'Coffee shop finder', 'Unit converter', 'Snake game']
 
@@ -114,11 +114,17 @@ function AppRunner({ app, onBack }: { app: GenerativeApp; onBack: () => void }) 
   const regenerate = useGenerativeAppStore((s) => s.regenerateApp)
   const cancel = useGenerativeAppStore((s) => s.cancelGeneration)
   const remove = useGenerativeAppStore((s) => s.deleteApp)
-  const doc = useMemo(() => buildAppDocument(app.html), [app.html])
+  const doc = useMemo(() => buildAppBrowserDocument(app.html), [app.html])
   const generating = app.status === 'generating'
+  const [openError, setOpenError] = useState<string | null>(null)
 
-  const openInBrowser = () => {
-    openExternal(`data:text/html;charset=utf-8;base64,${btoa(unescape(encodeURIComponent(doc)))}`)
+  const openInBrowser = async () => {
+    setOpenError(null)
+    try {
+      await openGeneratedAppDocument(doc)
+    } catch (err) {
+      setOpenError(err instanceof Error ? err.message : 'Could not open the app in your browser.')
+    }
   }
 
   const iconBtn =
@@ -146,7 +152,7 @@ function AppRunner({ app, onBack }: { app: GenerativeApp; onBack: () => void }) 
               <RotateCw size={14} />
             </button>
           )}
-          <button onClick={openInBrowser} disabled={!app.html} className={iconBtn} aria-label="Open in browser" title="Open in browser">
+          <button onClick={openInBrowser} disabled={app.status !== 'ready'} className={iconBtn} aria-label="Open in browser" title="Open in browser">
             <ExternalLink size={14} />
           </button>
           <button
@@ -160,6 +166,11 @@ function AppRunner({ app, onBack }: { app: GenerativeApp; onBack: () => void }) 
         </div>
       </div>
 
+      {(app.status === 'error' || openError) && (
+        <div role="alert" className="px-3 py-2 text-xs text-red-700 bg-red-50 dark:text-red-300 dark:bg-red-950/30">
+          {openError || app.error || 'Generation failed. Regenerate to try again.'}
+        </div>
+      )}
       <div className="flex-1 relative bg-white">
         {doc ? (
           <iframe

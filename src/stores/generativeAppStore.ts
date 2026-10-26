@@ -8,6 +8,7 @@ import {
   APP_SYSTEM_PROMPT,
   buildAppPrompt,
   extractHtml,
+  validateAppHtml,
 } from '../lib/generative-app'
 
 export type GenerativeAppStatus = 'generating' | 'ready' | 'error'
@@ -80,9 +81,11 @@ export const useGenerativeAppStore = create<GenerativeAppState>()(
 
           let raw = ''
           let lastFlush = 0
+          let completed = false
           for await (const chunk of stream) {
             if (abort.signal.aborted) return
             raw += chunk.content
+            completed ||= chunk.done
             // Throttle store writes so the iframe isn't rebuilt on every token.
             const now = Date.now()
             if (now - lastFlush > 250) {
@@ -91,13 +94,13 @@ export const useGenerativeAppStore = create<GenerativeAppState>()(
             }
           }
 
+          // An aborted/replaced stream may end without yielding another chunk.
+          if (abort.signal.aborted) return
           const html = extractHtml(raw)
-          if (!html) {
-            patch(id, { status: 'error', error: 'The model returned no app. Try again or pick a bigger model.' })
-          } else {
-            // A cut-off document still renders; the browser repairs it.
-            patch(id, { html, status: 'ready' })
-          }
+          const error = !completed
+            ? 'Generation was interrupted before completion. Regenerate to try again.'
+            : validateAppHtml(html)
+          patch(id, error ? { html, status: 'error', error } : { html, status: 'ready', error: undefined })
         } catch (err) {
           if (abort.signal.aborted) return
           patch(id, { status: 'error', error: err instanceof Error ? err.message : String(err) })
@@ -130,7 +133,7 @@ export const useGenerativeAppStore = create<GenerativeAppState>()(
           controllers.delete(id)
           const app = get().apps.find((a) => a.id === id)
           if (app?.status === 'generating') {
-            patch(id, app.html ? { status: 'ready' } : { status: 'error', error: 'Cancelled.' })
+            patch(id, { status: 'error', error: 'Generation cancelled. Regenerate to try again.' })
           }
         },
 
@@ -153,13 +156,13 @@ export const useGenerativeAppStore = create<GenerativeAppState>()(
         const saved = (persisted as Partial<GenerativeAppState> | undefined)?.apps ?? []
         return {
           ...current,
-          apps: saved.map((a) =>
-            a.status === 'generating'
-              ? a.html
-                ? { ...a, status: 'ready' as const }
-                : { ...a, status: 'error' as const, error: 'Interrupted. Regenerate to try again.' }
-              : a,
-          ),
+          apps: saved.map((a) => {
+            if (a.status === 'generating') {
+              return { ...a, status: 'error' as const, error: 'Interrupted. Regenerate to try again.' }
+            }
+            const error = a.status === 'ready' ? validateAppHtml(a.html) : null
+            return error ? { ...a, status: 'error' as const, error } : a
+          }),
         }
       },
     },

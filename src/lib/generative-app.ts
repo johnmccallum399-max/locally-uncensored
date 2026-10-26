@@ -40,30 +40,111 @@ export function extractHtml(raw: string): string {
   }
 
   const start = out.search(/<!doctype html|<html[\s>]/i)
-  if (start !== -1) out = out.slice(start)
-  return out.trim()
+  return start === -1 ? '' : out.slice(start).trim()
 }
 
-// Generated apps run offline: no network, no navigation, no forms posting out.
-// Combined with `sandbox="allow-scripts"` (opaque origin) this keeps an
-// unreviewed, model-written app from reaching the host app or the internet.
-const CSP =
-  "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; media-src data: blob:; form-action 'none'"
+/**
+ * Completion gate, not an HTML conformance or JavaScript correctness check.
+ * Require explicit html/body boundaries; browser auto-repair would otherwise
+ * hide truncation. Ignore comments, quoted attributes and raw-text contents so
+ * strings such as "</body></html>" cannot masquerade as document completion.
+ */
+export function validateAppHtml(html: string): string | null {
+  if (!/^\s*(?:<!doctype html\s*>\s*)?<html[\s>]/i.test(html)) {
+    return 'The model did not return an HTML document. Regenerate or try another model.'
+  }
+  const incomplete = 'The HTML document is incomplete or cut off. Regenerate or try a model with a larger output limit.'
+  let phase: 'start' | 'html' | 'head' | 'body' | 'after-body' | 'end' = 'start'
+  let hadHead = false
+  let templateDepth = 0
+  let offset = 0
+  while (offset < html.length) {
+    const next = html.indexOf('<', offset)
+    const text = html.slice(offset, next === -1 ? html.length : next)
+    if (text.trim() && phase !== 'head' && phase !== 'body') return incomplete
+    if (next === -1) break
+    offset = next
+    if (html.startsWith('<!--', offset)) {
+      const end = html.indexOf('-->', offset + 4)
+      if (end === -1) return incomplete
+      offset = end + 3
+      continue
+    }
+    const doctype = html.slice(offset).match(/^<!doctype html\s*>/i)
+    if (doctype && phase === 'start') {
+      offset += doctype[0].length
+      continue
+    }
+    // A complete tag, with > allowed inside quoted attribute values.
+    const tag = html.slice(offset).match(/^<(\/?)([a-z][a-z0-9:-]*)(?=[\s/>])(?:[^<>"']|"[^"]*"|'[^']*')*>/i)
+    if (!tag) {
+      // A literal less-than sign in body text is legal; an unfinished tag isn't.
+      if (phase === 'body' && !/^<[a-z!/?]/i.test(html.slice(offset))) {
+        offset++
+        continue
+      }
+      return incomplete
+    }
+    offset += tag[0].length
+    const name = tag[2].toLowerCase()
+    const closing = tag[1] === '/'
+    // Template contents are inert: their body/html tags cannot close the app.
+    if (name === 'template') {
+      if (phase !== 'head' && phase !== 'body') return incomplete
+      templateDepth += closing ? -1 : 1
+      if (templateDepth < 0) return incomplete
+      continue
+    }
+    if (name === 'plaintext' && !closing) return incomplete
+    if (templateDepth && /^(html|head|body)$/.test(name)) continue
+    if (name === 'html') {
+      if (!closing && phase === 'start') phase = 'html'
+      else if (closing && phase === 'after-body') phase = 'end'
+      else return incomplete
+    } else if (name === 'head') {
+      if (!closing && phase === 'html' && !hadHead) { phase = 'head'; hadHead = true }
+      else if (closing && phase === 'head') phase = 'html'
+      else return incomplete
+    } else if (name === 'body') {
+      if (!closing && phase === 'html') phase = 'body'
+      else if (closing && phase === 'body') phase = 'after-body'
+      else return incomplete
+    } else {
+      if (phase !== 'head' && phase !== 'body') return incomplete
+      if (!closing && /^(script|style|title|textarea|xmp|iframe|noembed|noframes|noscript)$/.test(name)) {
+        const end = new RegExp(`</${name}\\s*>`, 'ig')
+        end.lastIndex = offset
+        const match = end.exec(html)
+        if (!match) return incomplete
+        offset = end.lastIndex
+      }
+    }
+  }
+  return phase === 'end' && templateDepth === 0 ? null : incomplete
+}
 
-/** Wrap (partial) HTML in a document that carries the offline CSP. */
+// Block network resource loads and form submissions. The trusted frame wrapper
+// below also restricts child-frame navigation; CSP alone on a top-level
+// generated document is not a sandbox.
+const CSP =
+  "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; media-src data: blob:; form-action 'none'; base-uri 'none'"
+
+/** Put the offline policy BEFORE all generated markup, including partial HTML. */
 export function buildAppDocument(html: string): string {
-  const meta = `<meta http-equiv="Content-Security-Policy" content="${CSP}">`
   const trimmed = html.trim()
   if (!trimmed) return ''
+  const body = trimmed.replace(/^<!doctype[^>]*>/i, '')
+  return `<!doctype html><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${CSP}">${body}`
+}
 
-  if (/<head[\s>]/i.test(trimmed)) {
-    return trimmed.replace(/<head([^>]*)>/i, `<head$1>${meta}`)
-  }
-  if (/<html[\s>]/i.test(trimmed)) {
-    return trimmed.replace(/<html([^>]*)>/i, `<html$1><head>${meta}</head>`)
-  }
-  const body = /^<!doctype/i.test(trimmed) ? trimmed.replace(/^<!doctype[^>]*>/i, '') : trimmed
-  return `<!doctype html><html><head><meta charset="utf-8">${meta}</head><body>${body}</body></html>`
+/** Trusted wrapper used both in-app and when opening in a separate browser. */
+export function buildAppBrowserDocument(html: string): string {
+  const doc = buildAppDocument(html)
+  if (!doc) return ''
+  const escaped = doc.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  // Parent frame-src blocks the child's self-navigation to a network URL.
+  // No allow-same-origin, popups, forms, downloads or top-navigation tokens.
+  return `<!doctype html><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${CSP}; frame-src about:"><style>html,body,iframe{margin:0;width:100%;height:100%;border:0}iframe{display:block}</style><iframe sandbox="allow-scripts" referrerpolicy="no-referrer" title="Generated app" srcdoc="${escaped}"></iframe>`
 }
 
 const GRADIENTS: [string, string][] = [
