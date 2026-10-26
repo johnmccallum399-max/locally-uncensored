@@ -4,7 +4,7 @@
  * Tests the OpenAI-compatible provider client (message conversion, error parsing, tool calls).
  * Run: npx vitest run src/api/__tests__/provider-openai.test.ts
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { OpenAIProvider } from '../providers/openai-provider'
 import { ProviderError } from '../providers/types'
 import type { ProviderConfig } from '../providers/types'

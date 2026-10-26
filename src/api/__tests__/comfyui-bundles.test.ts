@@ -1,3 +1,4 @@
+import { beforeAll, describe, expect, it } from 'vitest'
 import { getVideoBundles, CUSTOM_NODE_REGISTRY, type ModelBundle } from '../discover'
 
 describe('Video Bundle Definitions', () => {
@@ -87,14 +88,14 @@ describe('Video Bundle Definitions', () => {
 
 describe('Custom Node Registry', () => {
   it('all entries have valid GitHub repo URL', () => {
-    for (const [key, entry] of Object.entries(CUSTOM_NODE_REGISTRY)) {
+    for (const entry of Object.values(CUSTOM_NODE_REGISTRY)) {
       expect(entry.repo).toMatch(/^https:\/\/github\.com\//)
       expect(entry.name).toBeTruthy()
     }
   })
 
   it('all entries have non-empty requiredNodes', () => {
-    for (const [key, entry] of Object.entries(CUSTOM_NODE_REGISTRY)) {
+    for (const entry of Object.values(CUSTOM_NODE_REGISTRY)) {
       expect(entry.requiredNodes.length).toBeGreaterThan(0)
     }
   })
