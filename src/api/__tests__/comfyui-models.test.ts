@@ -1,3 +1,4 @@
+import { describe, expect, it } from 'vitest'
 import {
   classifyModel,
   isVideoModelType,
@@ -6,7 +7,7 @@ import {
   MODEL_TYPE_DEFAULTS,
   COMPONENT_REGISTRY,
 } from '../comfyui'
-import { determineStrategy, type WorkflowStrategy } from '../dynamic-workflow'
+import { determineStrategy } from '../dynamic-workflow'
 import type { CategorizedNodes, AvailableModels } from '../comfyui-nodes'
 
 // ─── classifyModel ───
@@ -174,7 +175,7 @@ describe('COMPONENT_REGISTRY', () => {
   })
 
   it('types needing separate VAE have vae spec', () => {
-    for (const [type, entry] of Object.entries(COMPONENT_REGISTRY)) {
+    for (const entry of Object.values(COMPONENT_REGISTRY)) {
       if (entry.needsSeparateVAE) {
         expect(entry.vae).toBeDefined()
         expect(entry.vae!.matchPatterns.length).toBeGreaterThan(0)
@@ -184,7 +185,7 @@ describe('COMPONENT_REGISTRY', () => {
   })
 
   it('types needing separate CLIP have clip spec', () => {
-    for (const [type, entry] of Object.entries(COMPONENT_REGISTRY)) {
+    for (const entry of Object.values(COMPONENT_REGISTRY)) {
       if (entry.needsSeparateCLIP) {
         expect(entry.clip).toBeDefined()
         expect(entry.clip!.matchPatterns.length).toBeGreaterThan(0)
