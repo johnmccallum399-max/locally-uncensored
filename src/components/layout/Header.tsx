@@ -229,6 +229,7 @@ export function Header() {
         </button>
         {textNav('chat', 'Chat')}
         {textNav('create', 'Create')}
+        {textNav('apps', 'Apps')}
         <button
           onClick={() => { useCompareStore.getState().setComparing(true); setView('chat') }}
           className={`text-[0.6rem] font-medium transition-colors ${

@@ -7,6 +7,7 @@ import { ChatView } from '../chat/ChatView'
 import { ModelManager } from '../models/ModelManager'
 import { SettingsPage } from '../settings/SettingsPage'
 import { CreateView } from '../create/CreateView'
+import { AppsView } from '../apps/AppsView'
 import { BenchmarkView } from '../models/BenchmarkView'
 import { Onboarding } from '../onboarding/Onboarding'
 import { BackendSelector } from '../onboarding/BackendSelector'
@@ -47,7 +48,7 @@ export function AppShell() {
     'locally-uncensored-permissions', 'locally-uncensored-mcp-servers',
     'locally-uncensored-agent-mode', 'locally-uncensored-memory',
     'locally-uncensored-agent-workflows', 'locally-uncensored-agent',
-    'locally-uncensored-voice', 'lu-benchmark-store', 'lu-update-checker-v2',
+    'locally-uncensored-voice', 'lu-benchmark-store', 'lu-generative-apps', 'lu-update-checker-v2',
     'rag-store', 'workflow-store',
     // v2.5.0 launch teasers — back these up so an auto-updater who clicked
     // "Don't show me again" / dismissed the image-tool noti keeps that choice
@@ -592,6 +593,7 @@ export function AppShell() {
             {currentView === 'models' && <ErrorBoundary><ModelManager /></ErrorBoundary>}
             {currentView === 'benchmark' && <ErrorBoundary><BenchmarkView /></ErrorBoundary>}
             {currentView === 'settings' && <ErrorBoundary><SettingsPage /></ErrorBoundary>}
+            {currentView === 'apps' && <ErrorBoundary><AppsView /></ErrorBoundary>}
             {currentView === 'create' && <ErrorBoundary><CreateView /></ErrorBoundary>}
           </main>
         </div>
