@@ -104,9 +104,9 @@ describe('agents — pure functions', () => {
 
     it('includes history entries when present', () => {
       const history: AgentLogEntry[] = [
-        { type: 'thought', content: 'I should search the web', timestamp: Date.now() },
-        { type: 'action', content: 'web_search({"query":"test"})', timestamp: Date.now() },
-        { type: 'observation', content: 'Found 3 results', timestamp: Date.now() },
+        { id: 'history-thought', type: 'thought', content: 'I should search the web', timestamp: Date.now() },
+        { id: 'history-action', type: 'action', content: 'web_search({"query":"test"})', timestamp: Date.now() },
+        { id: 'history-observation', type: 'observation', content: 'Found 3 results', timestamp: Date.now() },
       ]
       const prompt = buildReActPrompt('test', AGENT_TOOLS, history)
       expect(prompt).toContain('Thought: I should search the web')
@@ -122,7 +122,7 @@ describe('agents — pure functions', () => {
 
     it('includes error entries from history', () => {
       const history: AgentLogEntry[] = [
-        { type: 'error', content: 'Tool failed: network error', timestamp: Date.now() },
+        { id: 'history-error', type: 'error', content: 'Tool failed: network error', timestamp: Date.now() },
       ]
       const prompt = buildReActPrompt('test', AGENT_TOOLS, history)
       expect(prompt).toContain('Error: Tool failed: network error')
@@ -130,7 +130,7 @@ describe('agents — pure functions', () => {
 
     it('includes user_input entries from history', () => {
       const history: AgentLogEntry[] = [
-        { type: 'user_input', content: 'Please try again', timestamp: Date.now() },
+        { id: 'history-user_input', type: 'user_input', content: 'Please try again', timestamp: Date.now() },
       ]
       const prompt = buildReActPrompt('test', AGENT_TOOLS, history)
       expect(prompt).toContain('User: Please try again')

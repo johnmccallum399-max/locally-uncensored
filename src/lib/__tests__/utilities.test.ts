@@ -194,7 +194,7 @@ describe('getRecommendations', () => {
 
   it('returns different models for different tiers', () => {
     const low = getRecommendations('low')
-    const medium = getRecommendations('medium')
+    getRecommendations('medium')
     const high = getRecommendations('high')
 
     const lowNames = low.map((r) => r.name)

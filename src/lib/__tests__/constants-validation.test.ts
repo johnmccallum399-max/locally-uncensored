@@ -301,7 +301,7 @@ describe('constants-validation', () => {
     })
 
     it('all flags are booleans', () => {
-      for (const [key, value] of Object.entries(FEATURE_FLAGS)) {
+      for (const value of Object.values(FEATURE_FLAGS)) {
         expect(typeof value).toBe('boolean')
       }
     })

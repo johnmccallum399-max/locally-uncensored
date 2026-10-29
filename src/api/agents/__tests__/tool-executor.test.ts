@@ -20,7 +20,10 @@ const makeRuntime = (
     getTool: overrides.getTool ?? ((name: string) => (name in tools ? { name, inputSchema: tools[name].inputSchema } : undefined)),
     execute:
       overrides.execute ??
-      (async (name: string, args: Record<string, any>) => {
+      (async (name: string | Record<string, any>, args?: Record<string, any>) => {
+        if (typeof name !== 'string' || args === undefined) {
+          throw new Error('test runtime requires a tool name and args')
+        }
         if (!(name in tools)) throw new Error(`no executor for ${name}`)
         return tools[name].executor(args)
       }),
