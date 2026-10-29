@@ -40,7 +40,7 @@ describe('chatStore — conversation CRUD', () => {
   })
 
   it('creates Codex conversation with correct title', () => {
-    const id = useChatStore.getState().createConversation('qwen3-coder:30b', '', 'codex')
+    useChatStore.getState().createConversation('qwen3-coder:30b', '', 'codex')
     expect(useChatStore.getState().conversations[0].title).toBe('Coding Agent')
     expect(useChatStore.getState().conversations[0].mode).toBe('codex')
   })
