@@ -303,7 +303,7 @@ export const useCreateStore = create<CreateState>()(
         promptHistory: state.promptHistory,
       }),
       // Migrate old 'i2i' mode to imageSubMode (v2.3.0 refactor)
-      merge: (persisted: any, current: any) => {
+      merge: (persisted: any, current: CreateState) => {
         const merged = { ...current, ...persisted }
         if (merged.mode === 'i2i') {
           merged.mode = 'image'
